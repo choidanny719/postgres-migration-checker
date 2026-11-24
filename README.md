@@ -1,34 +1,75 @@
 # PostgreSQL Migration Checker
 
-Rehearse SQL migrations on a disposable PostgreSQL database. The checker creates the old schema, loads sample data and records the output of existing application queries. It applies the proposed migrations, reruns those queries and reports the first SQL error or changed result.
+A Python command-line tool that checks whether an application's SQL queries still work after a database change. It runs the queries before and after the change in a temporary PostgreSQL database and compares the results.
 
-## Try it
+## How it works
 
-Install Python 3.10+ and start Docker, then run from the repository root:
+Suppose a book catalog runs this query:
 
-```sh
-python -m pip install '.[test]'
-cd examples/catalog
-pg-migration-check --baseline baseline.sql --seed seed.sql --migration add-isbn.sql --query client-query.sql
-pg-migration-check --baseline baseline.sql --seed seed.sql --migration rename-title.sql --query client-query.sql
+```sql
+SELECT id, title FROM books ORDER BY id;
 ```
 
-Adding an optional ISBN passes. Renaming the title column succeeds in PostgreSQL but breaks the old client query. Try `change-data.sql` to see a migration that preserves the columns and changes their values.
+PostgreSQL can apply all three migrations below. The checker shows which ones affect the application.
 
-| Exit | Meaning |
+| Migration | What happens to the existing query? | Result |
+| --- | --- | --- |
+| Add an optional `isbn` column | It returns the same IDs and titles. | Pass |
+| Rename `title` to `book_title` | It fails because `title` no longer exists. | Fail |
+| Convert every title to uppercase | It runs, but the titles it returns have changed. | Fail |
+
+## Run locally
+
+Requires Python 3.10 or newer and Docker. Start Docker, then run these commands from the repository root:
+
+```bash
+python -m pip install ".[test]"
+cd examples/catalog
+pg-migration-check --baseline baseline.sql --seed seed.sql --migration add-isbn.sql --query client-query.sql
+```
+
+Expected output:
+
+```text
+complete: 1 migration(s), 1 matching query result(s)
+```
+
+To see a failure, replace `add-isbn.sql` with `rename-title.sql` in the same command. The checker reports which query failed and includes PostgreSQL's error message.
+
+## Check your own migration
+
+| Argument | File to supply |
 | --- | --- |
-| 0 | All migrations applied and all checked query results matched |
-| 1 | A migration failed, or a previously working query failed or returned different output |
-| 2 | Invalid input, setup failure or an unusable baseline |
+| `--baseline` | SQL that creates the current schema |
+| `--seed` | Optional sample rows for the queries to read |
+| `--migration` | SQL for the proposed change. Repeat for multiple migrations, in order. |
+| `--query` | A query the application already uses. Repeat to check more queries. |
 
-Add `--format json` for a report containing the exit code, stage and detail. Repeat `--migration` to apply files in the supplied order, and repeat `--query` for multiple client queries. The seed is optional.
-
-## Execution
-
-Docker mode starts a fresh `postgres:16` container with no network or published port. The checker uses the container's Unix socket and removes the container and its anonymous volumes after the run. Native mode (`--engine native`) creates a temporary cluster with its own socket. It requires `initdb`, `pg_ctl` and `psql` on PATH and a non-root user on Linux or macOS.
-
-Supply trusted SQL and small, representative fixtures. Each file runs in a separate psql session; put transaction boundaries in migration files as needed. Query files run in read-only transactions. Comparison includes column labels, row order, NULLs and values; use an explicit `ORDER BY` and deterministic queries. Results are compared in memory. The check covers the supplied data and queries; it does not simulate concurrent writes, production lock durations or a rollback.
+Use representative sample rows and an explicit `ORDER BY` when a query returns multiple rows. The checker compares column names, row order and values, including the difference between `NULL` and an empty string.
 
 ## Tests
 
-From the repository root, run `python -m pytest -q --database-engine docker` or use the native PostgreSQL binaries and run `python -m pytest -q`. GitHub Actions exercises both modes.
+From the repository root:
+
+```bash
+python -m pytest -q --database-engine docker
+```
+
+GitHub Actions runs the suite against native PostgreSQL and repeats the integration cases in Docker.
+
+<details>
+<summary>Database setup, report format and exit codes</summary>
+
+Docker mode starts a fresh PostgreSQL 16 container and removes it and its volumes after the check. To use a local PostgreSQL installation, add `--engine native`. This mode creates a temporary cluster and requires a non-root user on Linux or macOS with `initdb`, `pg_ctl` and `psql` on the command path.
+
+Use trusted SQL files. Each file runs in its own session, and the checker runs application queries in read-only transactions. The comparison holds results in memory and covers the data and queries you supply. Production lock times, concurrent writes and rollback safety require separate testing.
+
+Use `--format json` to get the exit code, stage and result details.
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | All migrations ran and the query results matched |
+| 1 | A migration failed or an existing query failed or returned different data |
+| 2 | The checker could not load the inputs, start the database or run the baseline |
+
+</details>

@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "postgres-migration-checker"
+version = "0.1.0"
+description = "Rehearse SQL migrations against a disposable PostgreSQL database"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+
+[project.scripts]
+pg-migration-check = "pgcheck.cli:main"
+
+[tool.setuptools]
+packages = ["pgcheck"]

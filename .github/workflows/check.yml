@@ -18,3 +18,11 @@ jobs:
       - run: python -m pytest -q
       - run: docker pull postgres:16
       - run: python -m pytest -q tests/test_rehearsal.py --database-engine docker
+      - name: Rehearse the example migrations through the installed CLI
+        working-directory: examples/catalog
+        run: |
+          pg-migration-check --baseline baseline.sql --seed seed.sql --migration add-isbn.sql --query client-query.sql
+          status=0
+          pg-migration-check --baseline baseline.sql --seed seed.sql --migration rename-title.sql --query client-query.sql --format json > result.json || status=$?
+          test "$status" -eq 1
+          python -c 'import json; assert json.load(open("result.json"))["stage"].startswith("migrated query")'

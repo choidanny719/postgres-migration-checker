@@ -70,10 +70,11 @@ def docker_database():
     name = f"pgcheck-{uuid.uuid4().hex}"
     if not shutil.which("docker"):
         raise EngineError("Docker is unavailable; install Docker or use --engine native")
-    run(["docker", "run", "--detach", "--rm", "--name", name, "--network", "none",
+    run(["docker", "create", "--name", name, "--network", "none",
          "--env", "POSTGRES_HOST_AUTH_METHOD=trust", "--env", "POSTGRES_USER=rehearsal",
          "postgres:16"], timeout=180)
     try:
+        run(["docker", "start", name])
         deadline = time.monotonic() + 45
         check = 'test "$(cat /proc/1/comm)" = postgres && pg_isready -q -U rehearsal -d postgres'
         while True:
@@ -86,4 +87,4 @@ def docker_database():
                 time.sleep(0.25)
         yield Database(["docker", "exec", "-i", name, "psql", "-U", "rehearsal", "-d", "postgres"])
     finally:
-        run(["docker", "rm", "--force", name])
+        run(["docker", "rm", "--force", "--volumes", name])

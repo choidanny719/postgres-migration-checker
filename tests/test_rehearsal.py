@@ -46,3 +46,17 @@ def test_query_cannot_write(scenario, capsys):
 def test_ordered_migrations(scenario):
     assert scenario("ALTER TABLE items ADD amount int", seed=False,
                     extra=["ALTER TABLE items RENAME amount TO price"]) == 0
+
+
+def test_null_and_empty_string_are_distinct(scenario):
+    assert scenario("UPDATE items SET name = ''", query="SELECT nullif(name, 'book') AS title FROM items") == 1
+
+
+def test_failed_seed_is_a_setup_error(tmp_path, pytestconfig, capsys):
+    schema, seed, query = (tmp_path / name for name in ["schema", "seed", "query"])
+    schema.write_text("CREATE TABLE records(id integer PRIMARY KEY)")
+    seed.write_text("INSERT INTO records VALUES (1), (1)")
+    query.write_text("SELECT id FROM records")
+    assert main(["--engine", pytestconfig.getoption("--database-engine"), "--baseline", str(schema), "--seed", str(seed),
+                 "--migration", str(query), "--query", str(query)]) == 2
+    assert capsys.readouterr().out.startswith("seed:")

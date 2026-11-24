@@ -28,10 +28,12 @@ class Database:
     def __init__(self, command, env=None):
         self.command = command
         self.env = env
+        self.null_marker = f"pgcheck-null-{uuid.uuid4().hex}"
 
     def execute(self, sql, *, readonly=False):
         script = "BEGIN READ ONLY;\n" + sql + "\n;\nROLLBACK;\n" if readonly else sql
-        return run([*self.command, "-X", "-q", "--csv", "-v", "ON_ERROR_STOP=1", "-f", "-"],
+        return run([*self.command, "-X", "-q", "--csv", "-P", f"null={self.null_marker}",
+                    "-v", "ON_ERROR_STOP=1", "-f", "-"],
                    data=script.encode(), env=self.env)
 
 

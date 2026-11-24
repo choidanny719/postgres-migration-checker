@@ -4,7 +4,7 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-from .engine import EngineError, native_database
+from .engine import EngineError, docker_database, native_database
 from .rehearsal import Result, read_script, rehearse
 
 
@@ -14,6 +14,7 @@ def main(argv=None):
     parser.add_argument("--seed", type=Path)
     parser.add_argument("--migration", required=True, action="append", type=Path)
     parser.add_argument("--query", required=True, action="append", type=Path)
+    parser.add_argument("--engine", choices=("docker", "native"), default="docker")
     parser.add_argument("--format", choices=("json", "text"), default="text")
     args = parser.parse_args(argv)
     try:
@@ -21,7 +22,8 @@ def main(argv=None):
         seed = read_script(args.seed) if args.seed else None
         migrations = [(str(p), read_script(p)) for p in args.migration]
         queries = [(str(p), read_script(p)) for p in args.query]
-        with native_database() as db:
+        engine = docker_database if args.engine == "docker" else native_database
+        with engine() as db:
             result = rehearse(db, baseline, seed, migrations, queries)
     except (OSError, ValueError, EngineError) as exc:
         result = Result(2, "setup", str(exc))

@@ -6,13 +6,13 @@ from pgcheck.cli import main
 
 
 @pytest.fixture
-def scenario(tmp_path):
+def scenario(tmp_path, pytestconfig):
     def perform(migration, *, query="SELECT id, name FROM items ORDER BY id", seed=True, extra=()):
         def write(name, content):
             p = tmp_path / name
             p.write_text(content)
             return str(p)
-        args = ["--baseline", write("schema.sql", "CREATE TABLE items (id integer PRIMARY KEY, name text)")]
+        args = ["--engine", pytestconfig.getoption("--database-engine"), "--baseline", write("schema.sql", "CREATE TABLE items (id integer PRIMARY KEY, name text)")]
         if seed:
             args += ["--seed", write("seed.sql", "INSERT INTO items VALUES (1, 'book')")]
         for i, m in enumerate([migration, *extra]):
@@ -33,12 +33,14 @@ def test_migration(scenario, capsys, sql, exit_code, stage):
     assert json.loads(capsys.readouterr().out)["stage"].startswith(stage)
 
 
-def test_broken_baseline_query(scenario):
+def test_broken_baseline_query(scenario, capsys):
     assert scenario("SELECT 1", query="SELECT total FROM items") == 2
+    assert "baseline query" in json.loads(capsys.readouterr().out)["stage"]
 
 
-def test_query_cannot_write(scenario):
+def test_query_cannot_write(scenario, capsys):
     assert scenario("SELECT 1", query="DELETE FROM items") == 2
+    assert "read-only" in json.loads(capsys.readouterr().out)["detail"]
 
 
 def test_ordered_migrations(scenario):

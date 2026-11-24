@@ -16,3 +16,5 @@ jobs:
           echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
       - run: python -m pip install '.[test]'
       - run: python -m pytest -q
+      - run: docker pull postgres:16
+      - run: python -m pytest -q tests/test_rehearsal.py --database-engine docker

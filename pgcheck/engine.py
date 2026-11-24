@@ -2,6 +2,8 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -61,3 +63,27 @@ def native_database():
         finally:
             if (Path(data) / "postmaster.pid").exists():
                 run([*ctl, "-m", "immediate", "stop"], env=env)
+
+
+@contextmanager
+def docker_database():
+    name = f"pgcheck-{uuid.uuid4().hex}"
+    if not shutil.which("docker"):
+        raise EngineError("Docker is unavailable; install Docker or use --engine native")
+    run(["docker", "run", "--detach", "--rm", "--name", name, "--network", "none",
+         "--env", "POSTGRES_HOST_AUTH_METHOD=trust", "--env", "POSTGRES_USER=rehearsal",
+         "postgres:16"], timeout=180)
+    try:
+        deadline = time.monotonic() + 45
+        check = 'test "$(cat /proc/1/comm)" = postgres && pg_isready -q -U rehearsal -d postgres'
+        while True:
+            try:
+                run(["docker", "exec", name, "sh", "-c", check], timeout=5)
+                break
+            except EngineError as exc:
+                if time.monotonic() >= deadline:
+                    raise EngineError("PostgreSQL container did not become ready") from exc
+                time.sleep(0.25)
+        yield Database(["docker", "exec", "-i", name, "psql", "-U", "rehearsal", "-d", "postgres"])
+    finally:
+        run(["docker", "rm", "--force", name])
